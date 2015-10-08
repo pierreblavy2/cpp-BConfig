@@ -12,7 +12,11 @@
  * 		BConfig are identified by a that can map to 0,1 or more BConfig (i.e., childrens).
  * 		BConfig contains values identified by a key that can map to 0,1 or more values.
  * \author {Pierre BLAVY}
- * \version {1.0.2}
+ * \version {2.0.0}, changes :
+ *  - everything in namespace bconfig
+ *  - a more homogenous interface
+ *  - user can extend the conversion interface by specializing bconfig::Convert_t
+ *  - clearer errors
  * \date {28-september-2015}
  */
 
@@ -21,86 +25,16 @@
 
 //needed for header
 #include <deque>
-#include <string>
 #include <unordered_map>
-
-#include <exception>
 #include <istream>
 
+#include "BConfig_error.hpp"
+#include "BConfig_convert.hpp"
 
 
 
 
-
-/**\brief Base class for BConfig errors, used for catch(Error_BConfig_base &e);.
- * Do not throw this class, use derived instead*/
-struct Error_BConfig_base: std::exception{
-	protected:
-
-	/**\param msg_ const std::string&. Error message*/
-	Error_BConfig_base(const std::string& msg_) throw():msg("Error_BConfig : "){msg += msg_;}
-
-	/**\brief default constructor (do nothing)*/
-	Error_BConfig_base() throw(){}
-
-	/**\brief destructor (do nothing)*/
-	virtual ~Error_BConfig_base() throw(){}
-
-	/**\return error message*/
-	virtual const char* what() const throw(){return msg.c_str();}
-
-	std::string msg; /*!<The error message. */
-};
-
-
-/**\brief error thrown when the input file is invalid*/
-struct Error_BConfig_parse: Error_BConfig_base{
-
-	/** \param msg_ const std::string&. Error message
-	 *  \param config_file_ const std::string&, default ="". Config file path, "" for unknown
-	 *  \param line_ size_t, default = 0. Line number of the error, 0 for unknown
-	 */
-	Error_BConfig_parse(const std::string& msg_,const std::string &config_file_="", size_t line_=0) throw();
-
-	/**\return error message*/
-	virtual const char* what() const throw(){return msg.c_str();}
-
-	/**\brief destructor (do nothing)*/
-	virtual ~Error_BConfig_parse() throw(){}
-};
-
-
-/** \brief error thrown when a value cannot be get */
-struct Error_BConfig_get: Error_BConfig_base{
-
-	/**\param msg_ const std::string&. Error message
-	 * \param key const std::string&. Key used for getting value*/
-	Error_BConfig_get(const std::string& msg_,const std::string &key) throw(){msg="Error_BConfig_get : " + msg_ + " key=" + key;}
-
-	/**\param msg_ const std::string&. Error message
-	 * \param key const std::string&. Key used for getting value
-	 * \param value const std::string&. The gotten value
-	 */
-	Error_BConfig_get(const std::string& msg_,const std::string &key, const std::string & value) throw(){msg="Error_BConfig_get : " + msg_ + " key=" + key + " value="+value;}
-	virtual const char* what() const throw(){return msg.c_str();}/*!<\return error message*/
-	virtual ~Error_BConfig_get() throw(){}/*!<\brief destructor (do nothing)*/
-};
-
-
-/**\brief error thrown on a bad conversion (see BConfig::convert)*/
-struct Error_BConfig_convert: Error_BConfig_base{
-
-	/** \param msg_ const std::string&. Error message
-	 * \param ref_str_ const std::string&. The string used for conversion
-	 */
-	Error_BConfig_convert(const std::string& msg_,const std::string &ref_str_) throw(){msg="Error_BConfig_convert : " + msg_ + " string=" + ref_str_;}
-	virtual const char* what() const throw(){return msg.c_str();}/*!<\return error message*/
-	virtual ~Error_BConfig_convert() throw(){}/*!<\brief destructor (do nothing)*/
-};
-
-
-
-
+namespace bconfig{
 
 /**\brief A simple configuration file library
  * 		The input file is the description of a tree composed of BConfig (i.e., leaves).
@@ -129,7 +63,12 @@ struct BConfig{
 
 	/**\return true if one or more value for key, false if no value for key
 	 * \param key const std::string &. The key*/
-	bool has_value       (const std::string &key)const;
+	bool has_values       (const std::string &key)const;
+
+	/**\return the number of values for the key
+	 * \param key const std::string &. The key*/
+	size_t count_values(const std::string &key)const;
+
 
 
 
@@ -140,11 +79,11 @@ struct BConfig{
 	 * \return a not empty std::deque<return_t> containing the values associated to the key in the current blockk in the same order as they appear in input file
 	 */
 	template< typename return_t = std::string>
-	const std::deque<return_t> &get_values(const std::string &key,bool do_throw=true)const;
+	const std::deque<return_t> get_values(const std::string &key,bool do_throw=true)const;
 
 	/**\brief convenience wrapper for const char* key, see BConfig::get_values<return_t>(const std::string &key)const*/
 	template< typename return_t = std::string>
-	const std::deque<return_t> &get_values(const char *key,bool do_throw=true)const{return get_values<return_t>(std::string(key),do_throw);}
+	const std::deque<return_t> get_values(const char *key,bool do_throw=true)const{return get_values<return_t>(std::string(key),do_throw);}
 
 
 	/**
@@ -197,6 +136,13 @@ struct BConfig{
 
 	/**
 	 * \param key const std::string &. The key
+	 * \return the number of blocks associated to key
+	 */
+	size_t count_blocks(const std::string &key)const;
+
+
+	/**
+	 * \param key const std::string &. The key
 	 * \throw Error_BConfig_get if if key is missing
 	 * \throw Error_BConfig_get if the associated value is neither "yes","y","no" nor "n".
 	 * \throw Error_BConfig_get if there is more than one value for the key
@@ -233,15 +179,6 @@ struct BConfig{
 	 */
 	void parse(std::istream &in, const std::string &path="");
 
-
-	/**
-	 * \brief Convert a std::string to return_t. Specialize this function to handle your own types. If conversion fails : throw Error_BConfig_convert
-	 * \tparam return_t. std::string are converted to this type.
-	 * \param s const std::string &. The source string for conversion
-	 * \throw Error_BConfig_parse if file is invalid
-	 */
-	template< typename return_t> static return_t    convert(const std::string &s);
-
 	/**
 	 * \param out std::ostream &. Where to print, used for debug
 	 * \param indent_v std::ostream &. Indentation level
@@ -265,6 +202,9 @@ private:
 };
 
 
+}//end namespace bconfig
+
+
 
 //inline & template code
 #include "BConfig.tpp"
@@ -273,9 +213,9 @@ private:
 //--------------------------------
 //Explicit template instantiation
 //--------------------------------
-template std::string BConfig::convert(const std::string &s);
-template double      BConfig::convert(const std::string &s);
-template float       BConfig::convert(const std::string &s);
-template size_t      BConfig::convert(const std::string &s);
+//template std::string BConfig::convert(const std::string &s);
+//template double      BConfig::convert(const std::string &s);
+//template float       BConfig::convert(const std::string &s);
+//template size_t      BConfig::convert(const std::string &s);
 
 #endif /* BCONFIG_H_ */

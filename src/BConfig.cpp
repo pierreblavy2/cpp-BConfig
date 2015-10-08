@@ -8,21 +8,9 @@
 #include "BConfig.hpp"
 #include "helpers/OpenFile.h"
 #include "helpers/str_tools.h"
-#include "helpers/str_convert.h"
-
-Error_BConfig_parse::Error_BConfig_parse(
-		const std::string &msg_,
-		const std::string &config_file_,
-		size_t line_
-)throw(){
-	using namespace bconfig;
-	this->msg="Error_BConfig_parse";
-	if(config_file_!=""){msg+=": ";msg+= config_file_;}
-	if(msg_!=""){msg+= " : ";msg+= msg_;}
-	if(line_!=0){msg+=" line : "; msg+= str::toString(line_);}
-}
 
 
+using namespace bconfig;
 
 
 
@@ -49,11 +37,21 @@ const BConfig BConfig::get_unique_block(const std::string &key)const{
 }
 
 
+
+size_t BConfig::count_blocks(const std::string &key)const{
+	size_t count=0;
+	for(const auto &p : blocks){
+		if(p.first==key){++count;}
+	}
+	return count;
+}
+
+
 bool BConfig::get_yes_no(const std::string &key)const{
 	std::string s=get_unique_value<std::string>(key);
 	if(s=="y" or s== "yes"){return true;}
 	if(s=="n" or s== "no"){return false;}
-	throw Error_BConfig_get("get_yes_no", key,s);
+	throw Error_BConfig_get("get_yes_no : invalid string", key,s);
 }
 
 
@@ -62,7 +60,7 @@ bool BConfig::get_yes_no(const std::string &key,bool default_v)const{
 	if(s=="")return default_v;
 	if(s=="y" or s== "yes"){return true;}
 	if(s=="n" or s== "no"){return false;}
-	throw Error_BConfig_get("get_yes_no", key,s);
+	throw Error_BConfig_get("get_yes_no : invalid string", key,s);
 }
 
 
@@ -189,4 +187,28 @@ void BConfig::print(std::ostream &out, size_t indent_v)const{
 		out<<"}\n";
 	}
 }
+
+
+
+
+
+namespace{
+namespace bconfig{
+
+//check that template instanciation of BConfig member function works
+[[gnu::unused]] void compile_time_test_code(){
+	BConfig b;
+	b.get_values<std::string>("key");
+	b.get_values<double     >("key");
+
+	b.get_unique_value<std::string>("key");
+	b.get_unique_value<double     >("key");
+
+	b.get_unique_value<std::string>("key","default");
+	b.get_unique_value<double     >("key",0.5);
+
+}
+
+}} //end namespace anonymous::bconfig
+
 
